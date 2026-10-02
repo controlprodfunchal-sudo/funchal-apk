@@ -1,0 +1,91 @@
+name: Publicar o canal
+
+# Sempre que um HTML novo entra neste repositorio, este robo le a versao de
+# dentro do proprio arquivo e reescreve os dois versao.json sozinho.
+# Assim ninguem mais precisa editar JSON a mao, e some a classe de erro em que
+# o HTML e o JSON discordam da versao (o celular avisa novidade que nao existe,
+# ou fica quieto quando existe).
+
+on:
+  push:
+    branches: [ main, master ]
+    paths:
+      - 'index.html'
+      - 'sistema.html'
+
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Pegar os arquivos
+        uses: actions/checkout@v4
+
+      - name: Ler as versoes de dentro dos HTML
+        id: ler
+        run: |
+          TELA=''
+          SIS=''
+          [ -f index.html ]   && TELA=$(grep -o "APP_VERSION = '[^']*'"    index.html   | head -1 | sed "s/.*'\(.*\)'/\1/")
+          [ -f sistema.html ] && SIS=$(grep -o "SYSTEM_VERSION = '[^']*'"  sistema.html | head -1 | sed "s/.*'\(.*\)'/\1/")
+          echo "tela=$TELA"     >> "$GITHUB_OUTPUT"
+          echo "sistema=$SIS"   >> "$GITHUB_OUTPUT"
+          echo "App:     ${TELA:-(sem index.html)}"
+          echo "Sistema: ${SIS:-(sem sistema.html)}"
+
+      - name: Reescrever os dois versao.json
+        env:
+          TELA: ${{ steps.ler.outputs.tela }}
+          SIS:  ${{ steps.ler.outputs.sistema }}
+        run: |
+          AGORA=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          NOTAS=$(git log -1 --pretty=%s | tr -d '"' | cut -c1-160)
+
+          # --- app do celular: mantem as linhas do APK que ja estavam la ---
+          if [ -n "$TELA" ]; then
+            CODIGO=$(grep -o '"apkVersionCode": *[0-9]*' versao.json 2>/dev/null | grep -o '[0-9]*' || true)
+            NOMEAPK=$(grep -o '"apkVersionName": *"[^"]*"' versao.json 2>/dev/null | sed 's/.*"\(.*\)"/\1/' || true)
+            URLAPK=$(grep -o '"apkUrl": *"[^"]*"' versao.json 2>/dev/null | sed 's/.*: *"\(.*\)"/\1/' || true)
+            {
+              echo '{'
+              echo "  \"appVersion\": \"$TELA\","
+              [ -n "$CODIGO" ]  && echo "  \"apkVersionCode\": $CODIGO,"
+              [ -n "$NOMEAPK" ] && echo "  \"apkVersionName\": \"$NOMEAPK\","
+              [ -n "$URLAPK" ]  && echo "  \"apkUrl\": \"$URLAPK\","
+              echo "  \"publicadoEm\": \"$AGORA\","
+              echo "  \"notas\": \"$NOTAS\""
+              echo '}'
+            } > versao.json
+            echo '--- versao.json ---'; cat versao.json
+          fi
+
+          # --- sistema do escritorio ---
+          if [ -n "$SIS" ]; then
+            EXE=$(grep -o '"exeVersion": *"[^"]*"' versao-sistema.json 2>/dev/null | sed 's/.*"\(.*\)"/\1/' || true)
+            {
+              echo '{'
+              echo "  \"systemVersion\": \"$SIS\","
+              [ -n "$EXE" ] && echo "  \"exeVersion\": \"$EXE\","
+              echo "  \"publicadoEm\": \"$AGORA\","
+              echo "  \"notas\": \"$NOTAS\""
+              echo '}'
+            } > versao-sistema.json
+            echo '--- versao-sistema.json ---'; cat versao-sistema.json
+          fi
+
+      - name: Guardar se algo mudou
+        run: |
+          git config user.name  'Publicador FUNCHAL'
+          git config user.email 'actions@github.com'
+          git add versao.json versao-sistema.json 2>/dev/null || true
+          if git diff --cached --quiet; then
+            echo 'Nada a atualizar: os versao.json ja batiam com os HTML.'
+          else
+            git commit -m 'Versoes atualizadas automaticamente a partir dos HTML'
+            git push
+            echo 'versao.json e versao-sistema.json atualizados.'
+          fi
