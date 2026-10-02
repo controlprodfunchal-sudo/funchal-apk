@@ -1,4 +1,7 @@
 {
   "appVersion": "20261002-001",
-  "notas": "Primeira versão FUNCHAL."
+  "notas": "Primeira versão FUNCHAL.",
+  "apkVersionCode": 262752035,
+  "apkVersionName": "20261002-001",
+  "apkUrl": "https://controlprodfunchal-sudo.github.io/funchal-apk/FUNCHAL-Campo.apk"
 }
