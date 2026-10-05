@@ -577,7 +577,7 @@ body.home .top b{color:#fff}
    Companheiro do sistema de Relatório Fotográfico. Funciona offline e
    sincroniza pela mesma tabela na nuvem usada pelo computador.
    ====================================================================== */
-const APP_VERSION = '20261002-001';
+const APP_VERSION = '20261005-001';
 
 /* ======================================================================
    CONFIGURAÇÃO DA NUVEM — preencha UMA VEZ, antes de publicar o app.
@@ -694,7 +694,12 @@ async function entrar(){
       pintarDiagnostico(false);
       return;
     }
-    const u=us.find(x=>(x.login||'').toLowerCase()===login);
+    let u=us.find(x=>(x.login||'').toLowerCase()===login);
+    if((!u || u.hash!==hashSenha(senha,u.salt)) && conectado() && navigator.onLine){
+      /* Usuário criado em outro aparelho ainda não chegou aqui: baixa tudo da nuvem e tenta de novo. */
+      try{ localStorage.removeItem(PULL_KEY); await baixar(); us=await dbGetAll('usuarios'); }catch(e){ console.warn('sem nuvem no login', e); }
+      u=us.find(x=>(x.login||'').toLowerCase()===login);
+    }
     if(!u || u.hash!==hashSenha(senha,u.salt)){ alerta('lg-err','Usuário ou senha incorretos.'); $('lg-pass').value=''; return; }
     if(u.ativo===false){ alerta('lg-err','Este usuário está desativado. Procure o gestor.'); return; }
     USUARIO=u;
