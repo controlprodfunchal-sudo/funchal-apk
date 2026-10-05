@@ -81,7 +81,9 @@ jobs:
         run: |
           git config user.name  'Publicador FUNCHAL'
           git config user.email 'actions@github.com'
-          git add versao.json versao-sistema.json 2>/dev/null || true
+          for f in versao.json versao-sistema.json; do
+            if [ -f "$f" ]; then git add "$f"; fi
+          done
           if git diff --cached --quiet; then
             echo 'Nada a atualizar: os versao.json ja batiam com os HTML.'
           else
