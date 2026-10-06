@@ -18,6 +18,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: publicacao-funchal
+  cancel-in-progress: false
+
 jobs:
   publicar:
     runs-on: ubuntu-latest
