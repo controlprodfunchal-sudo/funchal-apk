@@ -119,4 +119,4 @@ jobs:
           git config user.email 'actions@github.com'
           git add FUNCHAL-Campo.apk versao.json
           git diff --cached --quiet && echo "Nada novo para publicar." || \
-            (git commit -m "APK ${{ steps.ver.outputs.tela }} (código ${{ steps.codigo.outputs.codigo }})" && git pull --rebase origin main && git push)
+            (git commit -m "APK ${{ steps.ver.outputs.tela }} (código ${{ steps.codigo.outputs.codigo }})" && git pull --rebase --autostash origin main && git push)
