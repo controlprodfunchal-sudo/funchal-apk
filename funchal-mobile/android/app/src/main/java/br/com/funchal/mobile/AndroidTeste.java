@@ -72,6 +72,12 @@ public class AndroidTeste {
         return prefs().getString("tela_versao", "");
     }
 
+    /** A tela chama isto quando carregou de verdade: zera a trava de segurança. */
+    @JavascriptInterface
+    public void telaOk() {
+        prefs().edit().putInt("tela_tentativas", 0).apply();
+    }
+
     @JavascriptInterface
     public void procurarAtualizacao() {
         Executors.newSingleThreadExecutor().execute(() -> {
@@ -84,6 +90,15 @@ public class AndroidTeste {
                 if (nova.equals(atual)) { jsChamar("avisarAtualizacao", "igual", nova); return; }
 
                 baixarArquivo(CANAL + "index.html?t=" + System.currentTimeMillis(), telaBaixando());
+                /* Só vale se veio inteira; senão descarta e o app segue com a tela que já tem. */
+                String conferida = TelaLocal.versaoValida(telaBaixando());
+                if (conferida == null) {
+                    //noinspection ResultOfMethodCallIgnored
+                    telaBaixando().delete();
+                    jsChamar("avisarAtualizacao", "erro", "tela baixada incompleta");
+                    return;
+                }
+                nova = conferida;
                 prefs().edit().putString("tela_versao_baixada", nova).apply();
                 jsChamar("avisarAtualizacao", "pronta", nova);
             } catch (Exception e) {
@@ -102,10 +117,10 @@ public class AndroidTeste {
                 if (!baixando.exists()) return;
                 File ativa = telaAtiva();
                 if (ativa.exists()) ativa.delete();
-                baixando.renameTo(ativa);
+                if (!baixando.renameTo(ativa)) return;
                 String nova = prefs().getString("tela_versao_baixada", "");
-                prefs().edit().putString("tela_versao", nova).remove("tela_versao_baixada").apply();
-                webView.loadUrl(Uri.fromFile(ativa).toString());
+                prefs().edit().putString("tela_versao", nova).remove("tela_versao_baixada").putInt("tela_tentativas", 0).apply();
+                webView.loadUrl(TelaLocal.URL_BASE);   /* nunca file:// -- o Android nega */
             } catch (Exception e) { Log.w(TAG, "aplicarAtualizacao", e); }
         });
     }
@@ -115,8 +130,10 @@ public class AndroidTeste {
         activity.runOnUiThread(() -> {
             File ativa = telaAtiva();
             if (ativa.exists()) ativa.delete();
-            prefs().edit().remove("tela_versao").remove("tela_versao_baixada").apply();
-            webView.loadUrl("file:///android_asset/public/index.html");
+            prefs().edit().remove("tela_versao").remove("tela_versao_baixada").putInt("tela_tentativas", 0).apply();
+            String fab = TelaLocal.versaoDeFabrica(activity);
+            if (fab != null) prefs().edit().putString("tela_versao", fab).apply();
+            webView.loadUrl(TelaLocal.URL_BASE);
         });
     }
 
