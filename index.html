@@ -577,7 +577,7 @@ body.home .top b{color:#fff}
    Companheiro do sistema de Relatório Fotográfico. Funciona offline e
    sincroniza pela mesma tabela na nuvem usada pelo computador.
    ====================================================================== */
-const APP_VERSION = '20261005-001';
+const APP_VERSION = '20261006-001';
 
 /* ======================================================================
    CONFIGURAÇÃO DA NUVEM — preencha UMA VEZ, antes de publicar o app.
@@ -2442,6 +2442,8 @@ async function editarFuro(id){
 const CANAL_APP = 'https://controlprodfunchal-sudo.github.io/funchal-apk/';
 let ATUALIZACAO = null;
 function noAplicativo(){ return typeof AndroidTeste !== 'undefined'; }
+/* Avisa o aplicativo que a tela carregou de verdade (zera a trava de segurança da tela baixada). */
+window.addEventListener('load',function(){ try{ if(typeof AndroidTeste!=='undefined' && AndroidTeste.telaOk) AndroidTeste.telaOk(); }catch(e){} });
 
 /* chamada pelo próprio aplicativo quando termina de procurar */
 function avisarAtualizacao(estado, valor){
