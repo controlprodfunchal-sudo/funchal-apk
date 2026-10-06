@@ -1,8 +1,8 @@
 {
-  "appVersion": "20261005-001",
+  "appVersion": "20261006-001",
   "apkVersionCode": 262781147,
   "apkVersionName": "20261005-001",
   "apkUrl": "https://controlprodfunchal-sudo.github.io/funchal-apk/FUNCHAL-Campo.apk",
-  "publicadoEm": "2026-10-05T11:53:03Z",
-  "notas": "Update file addition logic in GitHub Actions workflow"
+  "publicadoEm": "2026-10-06T14:41:59Z",
+  "notas": "Add files via upload"
 }
