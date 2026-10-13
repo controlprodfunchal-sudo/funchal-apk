@@ -648,7 +648,7 @@ body.home .top b{color:#fff}
    Companheiro do sistema de Relatório Fotográfico. Funciona offline e
    sincroniza pela mesma tabela na nuvem usada pelo computador.
    ====================================================================== */
-const APP_VERSION = '20261007-001';
+const APP_VERSION = '20261014-001';
 
 /* ======================================================================
    CONFIGURAÇÃO DA NUVEM — preencha UMA VEZ, antes de publicar o app.
@@ -768,7 +768,7 @@ async function entrar(){
     let u=us.find(x=>(x.login||'').toLowerCase()===login);
     if((!u || u.hash!==hashSenha(senha,u.salt)) && conectado() && navigator.onLine){
       /* Usuário criado em outro aparelho ainda não chegou aqui: baixa tudo da nuvem e tenta de novo. */
-      try{ localStorage.removeItem(PULL_KEY); await baixar(); us=await dbGetAll('usuarios'); }catch(e){ console.warn('sem nuvem no login', e); }
+      try{ btn.innerHTML='<i class="ti ti-loader-2"></i>Conferindo na nuvem…'; await usuariosDaNuvem(); us=await dbGetAll('usuarios'); }catch(e){ console.warn('sem nuvem no login', e); }
       u=us.find(x=>(x.login||'').toLowerCase()===login);
     }
     if(!u || u.hash!==hashSenha(senha,u.salt)){ alerta('lg-err','Usuário ou senha incorretos.'); $('lg-pass').value=''; return; }
@@ -922,6 +922,26 @@ async function enviar(){
   }));
   return lote.length;
 }
+
+/* Usuários: a nuvem sempre vence o registro do aparelho (baixa só a lista de usuários). */
+async function usuariosDaNuvem(){
+  if(!conectado() || !navigator.onLine) return 0;
+  const q=`${SYNC.tabela}?select=*&org=eq.${encodeURIComponent(SYNC.org)}&store=eq.usuarios&limit=500`;
+  const linhas=await (await syncFetch(q,{method:'GET'})).json();
+  let n=0; const all=await dbGetAll('usuarios');
+  for(const ln of linhas){
+    const local=all.find(x=>x.uid===ln.uid);
+    if(ln.deletado){ if(local) await _rawDel('usuarios',local.id); n++; continue; }
+    const rec={...(ln.dados||{}),uid:ln.uid};
+    if(local){
+      if(local.hash===rec.hash && local.salt===rec.salt && local.ativo===rec.ativo && local.perfil===rec.perfil
+         && local.nome===rec.nome && local.equipe===rec.equipe) continue;
+      rec.id=local.id; await _rawPut('usuarios',rec);
+    } else { delete rec.id; await _rawAdd('usuarios',rec); }
+    n++;
+  }
+  return n;
+}
 async function baixar(){
   let desde=localStorage.getItem(PULL_KEY)||'1970-01-01T00:00:00.000Z';
   let total=0,rodadas=0;
@@ -936,7 +956,7 @@ async function baixar(){
       const all=await dbGetAll(ln.store);
       const local=all.find(x=>x.uid===ln.uid);
       if(ln.deletado){ if(local) await _rawDel(ln.store,local.id); total++; continue; }
-      if(local && (local._ts||0) > new Date(ln.atualizado_em).getTime()+1500) continue;
+      if(local && ln.store!=='usuarios' && (local._ts||0) > new Date(ln.atualizado_em).getTime()+1500) continue;
       const rec={...(ln.dados||{}),uid:ln.uid};
       /* Cada aparelho tem seus próprios ids locais — o vínculo real é o uid da medição. */
       if(local){ rec.id=local.id; await _rawPut(ln.store,rec); }
@@ -948,12 +968,38 @@ async function baixar(){
   }
   return total;
 }
+
+/* Fotos do celular sobem para o Storage sozinhas a cada sincronização: sem isto o escritório
+   recebe o buraco, mas a foto só chegava quando o apontador mandava o relatório do dia. */
+async function fotosAutoEnviar(){
+  if(!conectado() || !navigator.onLine) return 0;
+  const pend=(await dbGetAll('fotos')).filter(x=>!x.enviada).slice(0,24);
+  if(!pend.length) return 0;
+  const imgs=await dbGetAll('imagens'); const mapaI=new Map(imgs.map(i=>[i.fotoUid,i]));
+  let ok=0;
+  for(const fo of pend){
+    try{
+      const im=mapaI.get(fo.uid); if(!im) continue;
+      const carimbada=im.carimbada||im.original; if(!carimbada) continue;
+      const url=await stEnviar(fo.arquivo||stCaminho(fo), carimbada);
+      let urlMini='', arquivoMini='';
+      try{ arquivoMini=stCaminhoMini(fo); urlMini=await stEnviar(arquivoMini, await encolher(carimbada, MINI_LARGURA, 0.66)); }
+      catch(e){ urlMini=''; arquivoMini=''; }
+      await dbPut('fotos',{...fo, enviada:true, url, urlMini, arquivoMini, enviadaEm:new Date().toISOString()});
+      const im2=(await dbGetAll('imagens')).find(x=>x.fotoUid===fo.uid);
+      if(im2 && im2.original) await _rawPut('imagens',{...im2, original:null});
+      ok++;
+    }catch(e){ console.warn('foto não subiu agora', e); }
+  }
+  return ok;
+}
 async function sincronizar(silencioso){
   if(!conectado()){ if(!silencioso) alerta('e-err','Este app ainda não foi ligado ao sistema do escritório.'); return; }
   if(OCUPADO) return;
   OCUPADO=true; pintarChip();
   try{
     try{ await obraEnviarFotos(); }catch(e){ console.warn('fotos de obra', e); }
+    try{ await fotosAutoEnviar(); }catch(e){ console.warn('fotos dos buracos', e); }
     const env=await enviar();
     const bai=await baixar();
     localStorage.setItem('funapp_quando',new Date().toISOString());
@@ -2927,6 +2973,7 @@ async function baixarRelatorio(uid){
     } else {
       mostrarLogin(); TELA='login';
     }
+    setInterval(()=>{ if(TELA==='login' && !document.hidden && navigator.onLine && conectado()) usuariosDaNuvem().catch(()=>{}); }, 30000);
     window.addEventListener('online', ()=>{ pintarChip(); sincronizar(true); });
     window.addEventListener('offline', pintarChip);
   }catch(err){
