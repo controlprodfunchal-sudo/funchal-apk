@@ -35,6 +35,13 @@
         </provider>
     </application>
 
+    <!-- Android 11+: sem isto o app nao enxerga a camera e o campo de foto cai na galeria -->
+    <queries>
+        <intent>
+            <action android:name="android.media.action.IMAGE_CAPTURE" />
+        </intent>
+    </queries>
+
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
