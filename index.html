@@ -150,6 +150,11 @@ button,input,select,textarea{font-family:inherit;font-size:16px;color:var(--text
 .slotp.mais i{font-size:30px;color:var(--blue)}
 .slotp.mais .rot{color:var(--blue)}
 .eqprow{margin-top:11px}
+.profrow{display:flex;align-items:center;gap:10px;margin-top:11px;padding:10px 12px;border:1.5px solid var(--border2);border-radius:var(--r2);background:#fff;cursor:pointer}
+.profrow input{width:22px;height:22px;accent-color:#F4BB06;flex:none}
+.profrow span{display:flex;flex-direction:column;font-size:13px}
+.profrow small{font-size:11px;color:var(--text2);margin-top:1px}
+.profrow.on{border-color:#F4BB06;background:#FFF8DC}
 .eqprow label{display:block;font-size:11px;font-weight:700;color:var(--text2);
   text-transform:uppercase;letter-spacing:.3px;margin-bottom:4px}
 .eqprow select{width:100%;padding:11px 10px;border:1.5px solid var(--border2);border-radius:var(--r2);background:#fff;outline:none}
@@ -648,7 +653,7 @@ body.home .top b{color:#fff}
    Companheiro do sistema de Relatório Fotográfico. Funciona offline e
    sincroniza pela mesma tabela na nuvem usada pelo computador.
    ====================================================================== */
-const APP_VERSION = '20261014-001';
+const APP_VERSION = '20261019-001';
 
 /* ======================================================================
    CONFIGURAÇÃO DA NUVEM — preencha UMA VEZ, antes de publicar o app.
@@ -1769,7 +1774,7 @@ async function seqAddFuro(){
     relatorioUid:REL_ATUAL.uid,
     num, data:$('s-data').value,
     rua:$('s-rua').value.trim(), servico:$('s-srv').value, equipe:$('s-eq').value||ID.equipe,
-    comp:'', larg:'', prof:'', equipamento:'',
+    comp:'', larg:'', prof:'', profundo:false, equipamento:'',
     origem:'mobile', dispositivo:ID.dispositivo, lancadoPor:ID.nome, lancadoLogin:ID.login,
     status:'Pendente', validadoPor:'', validadoEm:'', motivoDevolucao:''
   });
@@ -1965,6 +1970,9 @@ function medNum(v){
 }
 function medArea(f){ return medNum(f.comp) * medNum(f.larg); }
 function medVolume(f){ return medArea(f) * medNum(f.prof); }
+/* Remendo profundo: marcou a caixa, entram 0,15 m³ de bica corrida no buraco. */
+const BICA_PROFUNDO = 0.15;
+function medBica(f){ return f && f.profundo ? BICA_PROFUNDO : 0; }
 function medBR(v, casas){
   return Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:casas, maximumFractionDigits:casas});
 }
@@ -1975,11 +1983,17 @@ function medLer(uid){
 function medPinta(uid){
   const box = document.getElementById('md-'+uid); if(!box) return;
   const f = medLer(uid), a = medArea(f);
+  const bicaTxt = (document.querySelector(`[data-prof="${uid}"]`)||{}).checked ? ` · Bica <b>${medBR(BICA_PROFUNDO,2)} m³</b>` : '';
   if(!a){ box.className = 'medres vazio';
     box.textContent = 'Meça o buraco: comprimento e largura em metros.'; return; }
   box.className = 'medres';
   box.innerHTML = `Área <b>${medBR(a,2)} m²</b>`
-    + (medNum(f.prof) ? ` · Volume <b>${medBR(medVolume(f),3)} m³</b>` : ' · falta a profundidade');
+    + (medNum(f.prof) ? ` · Volume <b>${medBR(medVolume(f),3)} m³</b>` : ' · falta a profundidade') + bicaTxt;
+}
+async function medProfundo(uid, marcado){
+  await seqSetCampo(uid, 'profundo', !!marcado);
+  medPinta(uid);
+  medResumoTela(await seqFuros());
 }
 /* A medida pedida na hora da foto: quem está na rua tem o buraco na frente,
    e depois ninguém volta lá para medir. Dá para pular — os mesmos três campos
@@ -2096,6 +2110,9 @@ async function seqRender(){
               data-med="${f.uid}|prof" value="${medNum(f.prof)||''}" placeholder="0,00"
               oninput="medPinta('${f.uid}')" onchange="medGravar('${f.uid}','prof',this.value)"></div>
           </div>
+          <label class="profrow${f.profundo?' on':''}"><input type="checkbox" data-prof="${f.uid}" ${f.profundo?'checked':''}
+            onchange="this.parentNode.classList.toggle('on',this.checked);medProfundo('${f.uid}',this.checked)">
+            <span><b>Remendo profundo</b><small>soma ${medBR(BICA_PROFUNDO,2)} m³ de bica neste buraco</small></span></label>
           <div class="medres vazio" id="md-${f.uid}" onclick="medSheetAbrir('${f.uid}')"
             title="Tocar para medir">Meça o buraco: comprimento e largura em metros.</div>
         </div></div>`;
@@ -2434,6 +2451,8 @@ async function seqLinhas(){
         'Profundidade (m)': medNum(f.prof)||'',
         'Área (m²)': medArea(f) ? +medArea(f).toFixed(3) : '',
         'Volume (m³)': medVolume(f) ? +medVolume(f).toFixed(4) : '',
+        'Remendo profundo': f.profundo ? 'Sim' : '',
+        'Bica (m³)': medBica(f) || '',
         'Latitude': (fo&&fo.lat!=null)?fo.lat:'',
         'Longitude': (fo&&fo.lng!=null)?fo.lng:'',
         'Direção': (fo&&fo.direcao)||'',
