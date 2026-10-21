@@ -653,7 +653,7 @@ body.home .top b{color:#fff}
    Companheiro do sistema de Relatório Fotográfico. Funciona offline e
    sincroniza pela mesma tabela na nuvem usada pelo computador.
    ====================================================================== */
-const APP_VERSION = '20261019-001';
+const APP_VERSION = '20261021-001';
 
 /* ======================================================================
    CONFIGURAÇÃO DA NUVEM — preencha UMA VEZ, antes de publicar o app.
@@ -1970,9 +1970,10 @@ function medNum(v){
 }
 function medArea(f){ return medNum(f.comp) * medNum(f.larg); }
 function medVolume(f){ return medArea(f) * medNum(f.prof); }
-/* Remendo profundo: marcou a caixa, entram 0,15 m³ de bica corrida no buraco. */
+/* Remendo profundo: bica corrida com 0,15 m de espessura em toda a área do buraco.
+   Volume de bica = área × 0,15 — separado do volume de massa asfáltica (área × profundidade). */
 const BICA_PROFUNDO = 0.15;
-function medBica(f){ return f && f.profundo ? BICA_PROFUNDO : 0; }
+function medBica(f){ return f && f.profundo ? medArea(f) * BICA_PROFUNDO : 0; }
 function medBR(v, casas){
   return Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:casas, maximumFractionDigits:casas});
 }
@@ -1983,7 +1984,7 @@ function medLer(uid){
 function medPinta(uid){
   const box = document.getElementById('md-'+uid); if(!box) return;
   const f = medLer(uid), a = medArea(f);
-  const bicaTxt = (document.querySelector(`[data-prof="${uid}"]`)||{}).checked ? ` · Bica <b>${medBR(BICA_PROFUNDO,2)} m³</b>` : '';
+  const bicaTxt = (document.querySelector(`[data-prof="${uid}"]`)||{}).checked ? ` · Bica <b>${medBR(a*BICA_PROFUNDO,3)} m³</b>` : '';
   if(!a){ box.className = 'medres vazio';
     box.textContent = 'Meça o buraco: comprimento e largura em metros.'; return; }
   box.className = 'medres';
@@ -2112,7 +2113,7 @@ async function seqRender(){
           </div>
           <label class="profrow${f.profundo?' on':''}"><input type="checkbox" data-prof="${f.uid}" ${f.profundo?'checked':''}
             onchange="this.parentNode.classList.toggle('on',this.checked);medProfundo('${f.uid}',this.checked)">
-            <span><b>Remendo profundo</b><small>soma ${medBR(BICA_PROFUNDO,2)} m³ de bica neste buraco</small></span></label>
+            <span><b>Remendo profundo</b><small>bica de ${medBR(BICA_PROFUNDO,2)} m × a área do buraco</small></span></label>
           <div class="medres vazio" id="md-${f.uid}" onclick="medSheetAbrir('${f.uid}')"
             title="Tocar para medir">Meça o buraco: comprimento e largura em metros.</div>
         </div></div>`;
@@ -2452,7 +2453,7 @@ async function seqLinhas(){
         'Área (m²)': medArea(f) ? +medArea(f).toFixed(3) : '',
         'Volume (m³)': medVolume(f) ? +medVolume(f).toFixed(4) : '',
         'Remendo profundo': f.profundo ? 'Sim' : '',
-        'Bica (m³)': medBica(f) || '',
+        'Bica (m³)': medBica(f) ? +medBica(f).toFixed(4) : '',
         'Latitude': (fo&&fo.lat!=null)?fo.lat:'',
         'Longitude': (fo&&fo.lng!=null)?fo.lng:'',
         'Direção': (fo&&fo.direcao)||'',
