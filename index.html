@@ -618,6 +618,18 @@ body.home .top b{color:#fff}
   </div>
 </div>
 
+<div class="ov" id="ov-foto" style="z-index:80;background:rgba(0,0,0,.92);flex-direction:column;align-items:stretch">
+  <div style="display:flex;align-items:center;gap:8px;padding:calc(10px + env(safe-area-inset-top,0px)) 12px 8px;color:#fff">
+    <div style="flex:1;min-width:0"><div id="fv-tit" style="font-weight:800;font-size:15px"></div><div id="fv-info" style="font-size:11.5px;opacity:.75"></div></div>
+    <button class="btn" style="width:auto;padding:9px 12px;margin:0" onclick="fotoVerRefazer()" title="Tirar outra"><i class="ti ti-camera"></i></button>
+    <button class="btn d" style="width:auto;padding:9px 12px;margin:0" onclick="fotoVerExcluir()" title="Excluir foto"><i class="ti ti-trash"></i></button>
+    <button class="btn" style="width:auto;padding:9px 12px;margin:0" onclick="fotoVerFechar()" title="Fechar"><i class="ti ti-x"></i></button>
+  </div>
+  <div style="flex:1;display:flex;align-items:center;justify-content:center;overflow:auto;padding:0 6px calc(10px + env(safe-area-inset-bottom,0px))" onclick="fotoVerFechar()">
+    <img id="fv-img" alt="" style="max-width:100%;max-height:100%;object-fit:contain;border-radius:6px">
+  </div>
+</div>
+
 <div class="ov" id="ov-med">
   <div class="sheet">
     <div style="font-size:17px;font-weight:800;margin-bottom:4px" id="md-tit">Medida do buraco</div>
@@ -653,7 +665,7 @@ body.home .top b{color:#fff}
    Companheiro do sistema de Relatório Fotográfico. Funciona offline e
    sincroniza pela mesma tabela na nuvem usada pelo computador.
    ====================================================================== */
-const APP_VERSION = '20261021-001';
+const APP_VERSION = '20261023-001';
 
 /* ======================================================================
    CONFIGURAÇÃO DA NUVEM — preencha UMA VEZ, antes de publicar o app.
@@ -670,8 +682,8 @@ const NUVEM = {
 };
 
 /* ------------------------------- BANCO ---------------------------------- */
-const DB_NAME='FUNCHAL_CAMPO_DB', DB_VERSION=7;   /* bump obrigatorio ao somar store */
-const STORES=['furos','relatorios','equipes','servicos','equipamentos','equipuso','historico','dispositivos','usuarios','fotos','imagens','obras','obra_apont','obra_crono','obra_resp','obra_dia','obra_fotos'];
+const DB_NAME='FUNCHAL_CAMPO_DB', DB_VERSION=8;   /* bump obrigatorio ao somar store */
+const STORES=['furos','relatorios','equipes','servicos','equipamentos','equipuso','historico','dispositivos','usuarios','fotos','imagens','obras','obra_apont','obra_crono','obra_resp','obra_dia','obra_fotos','minis'];
 /* 'imagens' guarda os bytes das fotos e NUNCA sobe pela tabela: as imagens vao para o Storage. */
 const SYNC_STORES=['furos','relatorios','equipes','servicos','equipamentos','equipuso','historico','dispositivos','usuarios','fotos','obras','obra_apont','obra_crono','obra_resp','obra_dia','obra_fotos'];
 const BUCKET='funchal-fotos';
@@ -684,6 +696,9 @@ function initDB(){
     req.onupgradeneeded=e=>{
       const d=e.target.result;
       STORES.forEach(s=>{ if(!d.objectStoreNames.contains(s)) d.createObjectStore(s,{keyPath:'id',autoIncrement:true}); });
+      /* índice para achar a imagem de UMA foto sem carregar todas na memória */
+      ['imagens','minis'].forEach(n=>{ try{ const os=e.target.transaction.objectStore(n);
+        if(!os.indexNames.contains('fotoUid')) os.createIndex('fotoUid','fotoUid',{unique:false}); }catch(_){} });
     };
     req.onsuccess=e=>{db=e.target.result;res(db)};
     req.onerror=e=>rej(e.target.error);
@@ -693,6 +708,21 @@ function dbGetAll(s){return new Promise((res,rej)=>{try{const r=db.transaction(s
 function _rawAdd(s,r){return new Promise((res,rej)=>{const q=db.transaction(s,'readwrite').objectStore(s).add(r);q.onsuccess=()=>res(q.result);q.onerror=()=>rej(q.error)})}
 function _rawPut(s,r){return new Promise((res,rej)=>{const q=db.transaction(s,'readwrite').objectStore(s).put(r);q.onsuccess=()=>res(q.result);q.onerror=()=>rej(q.error)})}
 function _rawDel(s,i){return new Promise((res,rej)=>{const q=db.transaction(s,'readwrite').objectStore(s).delete(i);q.onsuccess=()=>res(1);q.onerror=()=>rej(q.error)})}
+/* Leitura de uma imagem só, pelo uid da foto — o celular travava porque cada tela
+   lia TODAS as fotos (original + carimbada, em base64) para a memória. */
+function dbPorIndice(s,ind,v){return new Promise((res,rej)=>{try{const r=db.transaction(s,'readonly').objectStore(s).index(ind).get(v);r.onsuccess=()=>res(r.result||null);r.onerror=()=>rej(r.error)}catch(e){rej(e)}})}
+function imgDe(uid){ return dbPorIndice('imagens','fotoUid',uid); }
+async function minisMapa(){ const m=new Map(); (await dbGetAll('minis')).forEach(x=>m.set(x.fotoUid,x.mini)); return m; }
+async function miniGravar(uid, src){
+  const mini = await encolher(src, 280, 0.6);
+  const ant = await dbPorIndice('minis','fotoUid',uid);
+  await _rawPut('minis', {...(ant||{}), fotoUid:uid, mini});
+  return mini;
+}
+async function imagemApagar(uid){
+  const im = await imgDe(uid); if(im) await _rawDel('imagens', im.id);
+  const mi = await dbPorIndice('minis','fotoUid',uid); if(mi) await _rawDel('minis', mi.id);
+}
 function dbClear(s){return new Promise((res,rej)=>{const q=db.transaction(s,'readwrite').objectStore(s).clear();q.onsuccess=()=>res(1);q.onerror=()=>rej(q.error)})}
 function novoUid(){ return (window.crypto&&crypto.randomUUID) ? crypto.randomUUID()
   : 'u'+Date.now().toString(36)+Math.random().toString(36).slice(2,10); }
@@ -884,6 +914,19 @@ function perguntaSheet(tit,msg,txtSim,txtNao){
   });
 }
 function comprimir(file,maxW,q){
+  /* Lê o arquivo por URL de objeto (sem cópia em base64) e solta a memória logo depois. */
+  return new Promise((res,rej)=>{
+    const url=URL.createObjectURL(file); const img=new Image();
+    img.onload=()=>{ try{ let w=img.width,h=img.height;
+        if(w>maxW){h=Math.round(h*maxW/w);w=maxW}
+        const cv=document.createElement('canvas');cv.width=w;cv.height=h;
+        const cx=cv.getContext('2d');cx.fillStyle='#fff';cx.fillRect(0,0,w,h);cx.drawImage(img,0,0,w,h);
+        const out=cv.toDataURL('image/jpeg',q||0.66); cv.width=cv.height=0; URL.revokeObjectURL(url); res(out);
+      }catch(e){ URL.revokeObjectURL(url); rej(e); } };
+    img.onerror=()=>{ URL.revokeObjectURL(url); rej(new Error('Imagem inválida')); }; img.src=url;
+  });
+}
+function comprimirVelho(file,maxW,q){
   return new Promise((res,rej)=>{
     const fr=new FileReader();
     fr.onload=()=>{ const img=new Image();
@@ -980,19 +1023,17 @@ async function fotosAutoEnviar(){
   if(!conectado() || !navigator.onLine) return 0;
   const pend=(await dbGetAll('fotos')).filter(x=>!x.enviada).slice(0,24);
   if(!pend.length) return 0;
-  const imgs=await dbGetAll('imagens'); const mapaI=new Map(imgs.map(i=>[i.fotoUid,i]));
   let ok=0;
   for(const fo of pend){
     try{
-      const im=mapaI.get(fo.uid); if(!im) continue;
+      const im=await imgDe(fo.uid); if(!im) continue;
       const carimbada=im.carimbada||im.original; if(!carimbada) continue;
       const url=await stEnviar(fo.arquivo||stCaminho(fo), carimbada);
       let urlMini='', arquivoMini='';
       try{ arquivoMini=stCaminhoMini(fo); urlMini=await stEnviar(arquivoMini, await encolher(carimbada, MINI_LARGURA, 0.66)); }
       catch(e){ urlMini=''; arquivoMini=''; }
       await dbPut('fotos',{...fo, enviada:true, url, urlMini, arquivoMini, enviadaEm:new Date().toISOString()});
-      const im2=(await dbGetAll('imagens')).find(x=>x.fotoUid===fo.uid);
-      if(im2 && im2.original) await _rawPut('imagens',{...im2, original:null});
+      if(im.original) await _rawPut('imagens',{...im, original:null});
       ok++;
     }catch(e){ console.warn('foto não subiu agora', e); }
   }
@@ -1795,9 +1836,7 @@ function seqExcluirFuro(uid, num){
       const f = todos.find(x=>x.uid===uid);
       const fts = await seqFotosDe(uid);
       for(const ft of fts){
-        const imgs = await dbGetAll('imagens');
-        const im = imgs.find(i=>i.fotoUid===ft.uid);
-        if(im) await _rawDel('imagens', im.id);
+        await imagemApagar(ft.uid);
         await _rawDel('fotos', ft.id);
         fila('fotos', ft.uid, true);
       }
@@ -1814,9 +1853,7 @@ function excluirRelatorio(uid){
       const furos = await relFuros(uid);
       for(const f of furos){
         for(const ft of await seqFotosDe(f.uid)){
-          const imgs = await dbGetAll('imagens');
-          const im = imgs.find(i=>i.fotoUid===ft.uid);
-          if(im) await _rawDel('imagens', im.id);
+          await imagemApagar(ft.uid);
           await _rawDel('fotos', ft.id); fila('fotos', ft.uid, true);
         }
         await _rawDel('furos', f.id); fila('furos', f.uid, true);
@@ -1925,11 +1962,11 @@ async function seqRecebeuFoto(input){
     if(ja){ registro.uid = ja.uid; registro.id = ja.id; await dbPut('fotos', registro); fotoUid = ja.uid; }
     else { await dbAdd('fotos', registro); fotoUid = (await seqFotosDe(furoUid)).find(x=>x.tipo===tipo).uid; }
 
-    const imgs = await dbGetAll('imagens');
-    const antiga = imgs.find(i=>i.fotoUid===fotoUid);
+    const antiga = await imgDe(fotoUid);
     const linha = {fotoUid, original, carimbada, completa:enderecoOk};
     if(antiga) await _rawPut('imagens', {...antiga, ...linha});
     else await _rawAdd('imagens', linha);
+    await miniGravar(fotoUid, carimbada);
 
     await seqRender();
     /* Foto guardada: se o buraco ainda não tem medida, o app pede agora. */
@@ -1940,6 +1977,52 @@ async function seqRecebeuFoto(input){
     alerta('s-err','Não deu para guardar a foto: '+esc(err.message||err));
     await seqRender();
   }
+}
+/* Fotos tiradas antes desta versão ainda não têm miniatura: gera uma por vez,
+   em segundo plano, e redesenha a tela só no fim. */
+let MINI_REPARANDO = false;
+async function miniReparar(fotos, mapaM){
+  if(MINI_REPARANDO) return;
+  const falta = fotos.filter(x=>!mapaM.has(x.uid));
+  if(!falta.length) return;
+  MINI_REPARANDO = true;
+  try{
+    for(const fo of falta){
+      const im = await imgDe(fo.uid); if(!im) continue;
+      const src = im.carimbada || im.original; if(!src) continue;
+      try{ await miniGravar(fo.uid, src); }catch(e){}
+      await new Promise(r=>setTimeout(r, 60));
+    }
+  }finally{ MINI_REPARANDO = false; }
+  if(TELA==='seq') seqRender();
+}
+/* Toque numa foto já tirada: abre grande, com a lixeira. */
+let FV_UID = null, FV_TIPO = null;
+async function fotoVer(furoUid, tipo){
+  const fo = (await seqFotosDe(furoUid)).find(x=>x.tipo===tipo);
+  if(!fo) return seqTirar(furoUid, tipo);
+  const im = await imgDe(fo.uid);
+  const src = (im && (im.carimbada || im.original)) || fo.url || '';
+  if(!src) return seqTirar(furoUid, tipo);
+  FV_UID = furoUid; FV_TIPO = tipo;
+  $('fv-img').src = src;
+  $('fv-tit').textContent = fo.rotulo || ('Buraco '+fo.furoNum);
+  $('fv-info').textContent = (fo.lat!=null ? 'com localização' : 'sem localização') + (fo.enviada ? ' · já no escritório' : ' · ainda não enviada');
+  $('ov-foto').style.display = 'flex';
+}
+function fotoVerFechar(){ $('ov-foto').style.display='none'; $('fv-img').removeAttribute('src'); }
+function fotoVerRefazer(){ const u=FV_UID, t=FV_TIPO; fotoVerFechar(); if(u) seqTirar(u,t); }
+function fotoVerExcluir(){
+  const u=FV_UID, t=FV_TIPO; if(!u) return;
+  confirmarSheet('Excluir esta foto',
+    'A foto sai deste aparelho <b>e do escritório</b> na próxima sincronização. O quadro volta a ficar vazio para tirar outra.',
+    async()=>{
+      const fo = (await seqFotosDe(u)).find(x=>x.tipo===t);
+      if(fo){ await imagemApagar(fo.uid); await _rawDel('fotos', fo.id); fila('fotos', fo.uid, true); }
+      fotoVerFechar();
+      await seqRender();
+      if(navigator.onLine && conectado()) sincronizar(true);
+    });
 }
 function seqMarcarOcupado(furoUid, tipo, txt){
   const el = document.querySelector(`[data-slot="${furoUid}|${tipo}"]`);
@@ -2059,8 +2142,8 @@ async function seqRender(){
     const todasFotos = await dbGetAll('fotos');
     const mapaF = new Map();
     todasFotos.forEach(x=>{ mapaF.set(x.furoUid+'|'+x.tipo, x); });
-    const imgs = await dbGetAll('imagens');
-    const mapaI = new Map(imgs.map(i=>[i.fotoUid, i]));
+    const mapaM = await minisMapa();
+    miniReparar(todasFotos, mapaM);
 
     let nFotos = 0, semEnd = 0, aEnviar = 0, semGps = 0;
     const html = furos.map(f=>{
@@ -2076,11 +2159,10 @@ async function seqRender(){
         if(!fo.enviada) aEnviar++;
         if(!fo.enderecoOk) semEnd++;
         if(fo.lat == null) semGps++;
-        const im = mapaI.get(fo.uid);
-        const src = im ? im.carimbada : (fo.url||'');
+        const src = mapaM.get(fo.uid) || fo.urlMini || '';
         const gpsCls = fo.lat!=null ? '' : ' no';
         const gpsTxt = fo.lat!=null ? (fo.enderecoOk?'GPS+END':'GPS') : 'SEM GPS';
-        return `<div class="slotp cheio" data-slot="${f.uid}|${tipo}" onclick="seqTirar('${f.uid}','${tipo}')">
+        return `<div class="slotp cheio" data-slot="${f.uid}|${tipo}" onclick="fotoVer('${f.uid}','${tipo}')">
             ${src?`<img src="${src}" alt="">`:''}
             <div class="gps${gpsCls}">${gpsTxt}</div>
             <div class="tag">${esc(fo.rotulo)}${fo.enviada?' ✓':''}</div></div>`;
@@ -2261,15 +2343,13 @@ async function seqEnviarFotos(silencioso){
   const fotos = (await dbGetAll('fotos')).filter(x=>uids.has(x.furoUid));
   const pend = fotos.filter(x=>!x.enviada);
   if(!pend.length){ if(!silencioso) alerta('s-ok','Todas as fotos deste dia já estão no escritório.'); return true; }
-  const imgs = await dbGetAll('imagens');
-  const mapaI = new Map(imgs.map(i=>[i.fotoUid,i]));
   let ok = 0, falhas = 0;
   for(let i=0;i<pend.length;i++){
     const fo = pend[i];
     alerta('s-prog', `Enviando foto <b>${i+1}</b> de <b>${pend.length}</b>...
       <div class="barra"><div style="width:${Math.round((i/pend.length)*100)}%"></div></div>`, 0);
     try{
-      const im = mapaI.get(fo.uid);
+      const im = await imgDe(fo.uid);
       if(!im){ falhas++; continue; }
       let carimbada = im.carimbada;
       /* completa o endereço agora que há internet e refaz o carimbo */
@@ -2296,7 +2376,7 @@ async function seqEnviarFotos(silencioso){
       await dbPut('fotos', {...fo, enviada:true, url, urlMini, arquivoMini,
         enviadaEm:new Date().toISOString()});
       /* libera espaço: o original não é mais necessário depois do envio */
-      const im2 = (await dbGetAll('imagens')).find(x=>x.fotoUid===fo.uid);
+      const im2 = await imgDe(fo.uid);
       if(im2) await _rawPut('imagens', {...im2, original:null});
       ok++;
     }catch(err){ console.error(err); falhas++; }
@@ -2331,8 +2411,6 @@ async function seqGerarPDF(compartilhar){
     const doc = new jsPDF({unit:'mm', format:'a4', orientation:'portrait', compress:true});
 
     const fotos = await dbGetAll('fotos');
-    const imgs = await dbGetAll('imagens');
-    const mapaI = new Map(imgs.map(i=>[i.fotoUid,i]));
     const mapaF = new Map(); fotos.forEach(x=>mapaF.set(x.furoUid+'|'+x.tipo,x));
 
     /* Um buraco por quadro, com os quatro espaços dele. */
@@ -2366,11 +2444,11 @@ async function seqGerarPDF(compartilhar){
         const y0 = y + lin*(HF*2 + 12 + 4);
         const par = daPagina[b];
         const cel = [];
-        par.forEach(f=>{ FOTO_TIPOS.forEach(t=>{
+        for(const f of par){ for(const t of FOTO_TIPOS){
           const fo = mapaF.get(f.uid+'|'+t);
-          const im = fo && mapaI.get(fo.uid);
+          const im = fo ? await imgDe(fo.uid) : null;
           cel.push(im ? im.carimbada : null);
-        }); });
+        } }
         for(let ci=0; ci<cel.length; ci++){
           const cx = x0 + (ci%2)*(COL/2), cy = y0 + Math.floor(ci/2)*HF;
           if(cel[ci]){ try{ doc.addImage(cel[ci], 'JPEG', cx, cy, COL/2, HF); }catch(e){} }
@@ -2807,9 +2885,8 @@ const REL_CLS = {'Validado':'s-ok','Devolvido':'s-rd','Pendente':'s-wn','Vazio':
 
 async function renderMeus(){
   try{
-    const [furos, rels, fotos, imgs] = await Promise.all([
-      dbGetAll('furos'), dbGetAll('relatorios'), dbGetAll('fotos'), dbGetAll('imagens')]);
-    const mapI = new Map(imgs.map(i=>[i.fotoUid,i]));
+    const [furos, rels, fotos, mapI] = await Promise.all([
+      dbGetAll('furos'), dbGetAll('relatorios'), dbGetAll('fotos'), minisMapa()]);
     const meu = x => !ID.nome || !x.lancadoPor || x.lancadoPor===ID.nome || x.dispositivo===ID.dispositivo;
 
     const porRel = new Map();
@@ -2827,7 +2904,7 @@ async function renderMeus(){
       const fts = fotos.filter(x=>fs.some(f=>f.uid===x.furoUid));
       const sit = relSituacao(fs, r);
       const devolvidos = fs.filter(f=>f.status==='Devolvido');
-      const capas = fts.slice(0,2).map(x=>{ const im = mapI.get(x.uid); return (im&&im.carimbada) || x.url || ''; });
+      const capas = fts.slice(0,2).map(x=> mapI.get(x.uid) || x.urlMini || '');
       return {r, fs, sit, devolvidos, nFotos:fts.length, capas};
     }).sort((a,b)=>{
       const pa = a.sit==='Devolvido'?0:1, pb = b.sit==='Devolvido'?0:1;
@@ -3496,7 +3573,7 @@ async function obThumb(uid){
   if(OB_THUMBS[uid]) return OB_THUMBS[uid];
   const f=(OBD&&OBD.fotos||[]).find(x=>x.uid===uid);
   if(f&&f.url) return f.url;
-  const im=(await dbGetAll('imagens')).find(i=>i.fotoUid===uid);
+  const im=await imgDe(uid);
   if(im) return OB_THUMBS[uid]=await encolher(im.carimbada||im.original, 240, 0.6);
   return '';
 }
@@ -3513,7 +3590,7 @@ async function obraEnviarFotos(){
   if(!conectado()||!navigator.onLine) return 0;
   const pend=(await dbGetAll('obra_fotos')).filter(f=>!f.enviada && !f.deletado); let n=0;
   for(const f of pend){
-    const im=(await dbGetAll('imagens')).find(i=>i.fotoUid===f.uid); if(!im) continue;
+    const im=await imgDe(f.uid); if(!im) continue;
     try{
       const url=await stEnviar(f.arquivo, im.carimbada||im.original);
       await dbPut('obra_fotos', {...f, enviada:true, url});
